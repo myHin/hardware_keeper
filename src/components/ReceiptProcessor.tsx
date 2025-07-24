@@ -1,5 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
+import Webcam from 'react-webcam'
 import { 
   Upload, 
   FileImage, 
@@ -14,7 +15,8 @@ import {
   Calendar,
   Shield,
   Clock,
-  X
+  X,
+  RefreshCw
 } from 'lucide-react'
 import { useReceiptProcessing } from '../hooks/useReceiptProcessing'
 import { ExtractedProductInfo } from '../types/receipt'
@@ -37,7 +39,11 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
   const [showWarrantyInputs, setShowWarrantyInputs] = useState<Set<number>>(new Set())
   const [uploadingPhotos, setUploadingPhotos] = useState<Set<number>>(new Set())
   const [showUploadModal, setShowUploadModal] = useState(false)
+  const [showCameraModal, setShowCameraModal] = useState(false)
   const [uploadError, setUploadError] = useState<string>('')
+  const [cameraError, setCameraError] = useState<string>('')
+  const [isCameraReady, setIsCameraReady] = useState(false)
+  const webcamRef = useRef<Webcam>(null)
   const { user } = useAuth()
   const { status, uploadAndProcess, processClientSide, isLoading, reset } = useReceiptProcessing()
 
@@ -129,112 +135,91 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
   const handleCameraCapture = useCallback(async () => {
     try {
       setUploadError('')
-      setShowUploadModal(false)
+      setCameraError('')
       
-      // Show loading state
-      toast('Checking camera access...', {
-        icon: '📹',
-        duration: 2000,
-      })
-      
-      // First, check if we can actually access camera
-      const hasCamera = await checkCameraSupport()
-      
-      if (!hasCamera && !isMobile()) {
-        setUploadError('No camera detected on this device. Please use "Select File" to choose an image.')
-        return
-      }
-      
-      // Try to actually access the camera first (for desktop/supported browsers)
-      if (!isMobile()) {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-              facingMode: 'environment',
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            } 
-          })
-          
-          // If we get here, camera is available - stop the stream and use file input
-          stream.getTracks().forEach(track => track.stop())
-          
-          toast('Camera access granted! Please take your photo.', {
-            icon: '✅',
-            duration: 3000,
-          })
-        } catch (cameraError: any) {
-          console.error('Camera access denied:', cameraError)
-          
-          if (cameraError.name === 'NotAllowedError') {
-            setUploadError('Camera access denied. Please allow camera permissions in your browser and try again.')
-            return
-          } else if (cameraError.name === 'NotFoundError') {
-            setUploadError('No camera found on this device. Please use "Select File" instead.')
-            return
-          } else {
-            // Fall through to file input method
-            console.log('Camera access failed, falling back to file input')
-          }
-        }
-      }
-      
-      // Create file input with capture attribute
-      const input = document.createElement('input')
-      input.type = 'file'
-      input.accept = 'image/*'
-      
-      // Set capture attributes for mobile
       if (isMobile()) {
-        input.setAttribute('capture', 'environment')
-        try {
-          (input as any).capture = 'environment'
-        } catch (e) {
-          console.log('Could not set capture property')
-        }
-      }
-      
-      let fileSelected = false
-      let timeoutId: NodeJS.Timeout
-      
-      input.onchange = (e) => {
-        fileSelected = true
-        clearTimeout(timeoutId)
+        // For mobile devices, use the native camera
+        const input = document.createElement('input')
+        input.type = 'file'
+        input.accept = 'image/*'
+        input.capture = 'environment'
         
-        const file = (e.target as HTMLInputElement).files?.[0]
-        if (file) {
-          handleFileProcess(file)
-        } else {
-          setUploadError('No image was selected. Please try again.')
-        }
-      }
-      
-      input.onerror = () => {
-        setUploadError('Failed to access camera. Please try "Select File" instead.')
-      }
-      
-      // Set up timeout to detect if dialog was cancelled
-      timeoutId = setTimeout(() => {
-        if (!fileSelected) {
-          if (isMobile()) {
-            console.log('Camera capture may have been cancelled')
-          } else {
-            toast('💡 If file browser opened instead of camera, please select a photo or try on a mobile device for direct camera access.', {
-              icon: '💡',
-              duration: 6000,
-            })
+        input.onchange = (e) => {
+          const file = (e.target as HTMLInputElement).files?.[0]
+          if (file) {
+            handleFileProcess(file)
           }
         }
-      }, 3000)
-      
-      // Trigger the input
-      input.click()
-      
+        
+        input.click()
+      } else {
+        // For desktop, show webcam modal
+        setShowCameraModal(true)
+        setShowUploadModal(false)
+      }
     } catch (error) {
-      console.error('Camera capture error:', error)
-      setUploadError('Failed to access camera. Please try "Select File" to choose an image from your device.')
+      console.error('Camera initialization error:', error)
+      setCameraError('Failed to initialize camera. Please try using "Select File" instead.')
     }
-  }, [checkCameraSupport, isMobile])
+  }, [])
+
+  const handleWebcamCapture = useCallback(() => {
+    if (webcamRef.current) {
+      try {
+        const imageSrc = webcamRef.current.getScreenshot()
+        if (imageSrc) {
+          // Convert base64 to file
+          fetch(imageSrc)
+            .then(res => res.blob())
+            .then(blob => {
+              const file = new File([blob], "webcam-capture.jpg", { type: "image/jpeg" })
+              handleFileProcess(file)
+              setShowCameraModal(false)
+            })
+        }
+      } catch (error) {
+        console.error('Webcam capture error:', error)
+        setCameraError('Failed to capture image. Please try again or use "Select File".')
+      }
+    }
+  }, [webcamRef])
+
+  const handleCameraError = useCallback((error: string | DOMException) => {
+    console.error('Camera error details:', {
+      name: error instanceof DOMException ? error.name : 'Unknown',
+      message: error instanceof DOMException ? error.message : error,
+      toString: error.toString()
+    })
+    
+    let errorMessage = 'Failed to access camera. '
+    
+    if (error instanceof DOMException) {
+      switch (error.name) {
+        case 'NotAllowedError':
+          errorMessage += 'Please allow camera access in your browser settings and try again.'
+          break
+        case 'NotFoundError':
+          errorMessage += 'No camera found on your device.'
+          break
+        case 'NotReadableError':
+          errorMessage += 'Your camera may be in use by another application.'
+          break
+        case 'OverconstrainedError':
+          errorMessage += 'Unable to find a camera that meets the required constraints.'
+          break
+        default:
+          errorMessage += 'Please check your camera permissions or try using "Select File".'
+      }
+    }
+    
+    setCameraError(errorMessage)
+    setIsCameraReady(false)
+  }, [])
+
+  const handleCameraSuccess = useCallback(() => {
+    setIsCameraReady(true)
+    setCameraError('')
+  }, [])
 
   const handleFileSelect = useCallback(() => {
     try {
@@ -1038,6 +1023,165 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Camera Modal */}
+      {showCameraModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Take Receipt Photo</h3>
+              <button
+                onClick={() => {
+                  if (webcamRef.current?.video?.srcObject) {
+                    const stream = webcamRef.current.video.srcObject as MediaStream
+                    stream.getTracks().forEach(track => track.stop())
+                  }
+                  setShowCameraModal(false)
+                  setCameraError('')
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            <div className="p-4">
+              {cameraError ? (
+                <div className="text-center py-8">
+                  <XCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+                  <p className="text-red-600 mb-4">{cameraError}</p>
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => {
+                        setCameraError('')
+                        // Try to reinitialize the camera with different constraints
+                        if (webcamRef.current) {
+                          webcamRef.current.video = null
+                          setIsCameraReady(false)
+                          // Small delay to ensure cleanup
+                          setTimeout(() => {
+                            setShowCameraModal(false)
+                            setTimeout(() => setShowCameraModal(true), 100)
+                          }, 100)
+                        }
+                      }}
+                      className="btn btn-primary w-full"
+                    >
+                      Try Again
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCameraModal(false)
+                        handleFileSelect()
+                      }}
+                      className="btn btn-secondary w-full"
+                    >
+                      Select File Instead
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="relative bg-black rounded-lg overflow-hidden">
+                    <Webcam
+                      ref={webcamRef}
+                      audio={false}
+                      screenshotFormat="image/jpeg"
+                      videoConstraints={{
+                        facingMode: 'environment',
+                        width: { min: 640, ideal: 1920, max: 1920 },
+                        height: { min: 480, ideal: 1080, max: 1080 },
+                        aspectRatio: 16/9
+                      }}
+                      onUserMedia={handleCameraSuccess}
+                      onUserMediaError={handleCameraError}
+                      className="w-full"
+                    />
+                    
+                    {!isCameraReady && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                        <Loader2 className="h-8 w-8 text-white animate-spin" />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-center gap-4">
+                    <button
+                      onClick={() => {
+                        if (webcamRef.current?.video?.srcObject) {
+                          const stream = webcamRef.current.video.srcObject as MediaStream
+                          stream.getTracks().forEach(track => track.stop())
+                        }
+                        setShowCameraModal(false)
+                      }}
+                      className="btn btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    
+                    <button
+                      onClick={handleWebcamCapture}
+                      disabled={!isCameraReady}
+                      className="btn btn-primary"
+                    >
+                      <Camera className="h-4 w-4 mr-2" />
+                      Take Photo
+                    </button>
+
+                    {isCameraReady && navigator.mediaDevices.enumerateDevices && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (webcamRef.current?.video?.srcObject) {
+                              const currentStream = webcamRef.current.video.srcObject as MediaStream
+                              currentStream.getTracks().forEach(track => track.stop())
+                              
+                              // Get list of video devices
+                              const devices = await navigator.mediaDevices.enumerateDevices()
+                              const videoDevices = devices.filter(device => device.kind === 'videoinput')
+                              
+                              if (videoDevices.length > 1) {
+                                // Get current device ID
+                                const currentTrack = currentStream.getVideoTracks()[0]
+                                const currentDeviceId = currentTrack.getSettings().deviceId
+                                
+                                // Find next device
+                                const currentIndex = videoDevices.findIndex(device => device.deviceId === currentDeviceId)
+                                const nextDevice = videoDevices[(currentIndex + 1) % videoDevices.length]
+                                
+                                // Request new stream with next device
+                                const newStream = await navigator.mediaDevices.getUserMedia({
+                                  video: {
+                                    deviceId: { exact: nextDevice.deviceId },
+                                    width: { min: 640, ideal: 1920, max: 1920 },
+                                    height: { min: 480, ideal: 1080, max: 1080 },
+                                    aspectRatio: 16/9
+                                  }
+                                })
+                                
+                                if (webcamRef.current && webcamRef.current.video) {
+                                  webcamRef.current.video.srcObject = newStream
+                                }
+                              }
+                            }
+                          } catch (error) {
+                            console.error('Error switching camera:', error)
+                            setCameraError('Failed to switch camera. Please try again.')
+                          }
+                        }}
+                        className="btn btn-outline"
+                        title="Switch Camera"
+                      >
+                        <RefreshCw className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
