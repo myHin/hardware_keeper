@@ -116,22 +116,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
     return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
   }
 
-    const checkCameraSupport = useCallback(async () => {
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        return false
-      }
-      
-      // Check if camera devices are available
-      const devices = await navigator.mediaDevices.enumerateDevices()
-      const videoDevices = devices.filter(device => device.kind === 'videoinput')
-      return videoDevices.length > 0
-    } catch (error) {
-      console.error('Camera support check failed:', error)
-      return false
-    }
-  }, [])
-
   const handleCameraCapture = useCallback(async () => {
     try {
       setUploadError('')
