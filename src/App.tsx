@@ -2,6 +2,7 @@ import { Routes, Route } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import { PrivateRoute } from './components/PrivateRoute'
 import { Layout } from './components/Layout'
+import { DebugConsole } from './components/DebugConsole'
 import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ProductsPage from './pages/ProductsPage'
@@ -66,6 +67,7 @@ function App() {
           </PrivateRoute>
         } />
       </Routes>
+      <DebugConsole />
     </AuthProvider>
   )
 }
