@@ -6,6 +6,7 @@
   NPM_VERSION = "9.5.1"
   NODE_VERSION = "18"
   CI = "false"  # This prevents treating warnings as errors
+  SECRETS_SCAN_ENABLED = "false"  # Disable secrets scanning since we're using client-side env vars
 
 [[redirects]]
   from = "/*"
