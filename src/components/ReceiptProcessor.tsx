@@ -14,7 +14,8 @@ import {
   Camera,
   Calendar,
   Shield,
-  Clock
+  Clock,
+  X
 } from 'lucide-react'
 import { useReceiptProcessing } from '../hooks/useReceiptProcessing'
 import { ExtractedProductInfo } from '../types/receipt'
@@ -38,18 +39,259 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
   const [productWarranties, setProductWarranties] = useState<{[key: number]: {months?: number, hasWarranty: boolean}}>({})
   const [showWarrantyInputs, setShowWarrantyInputs] = useState<Set<number>>(new Set())
   const [uploadingPhotos, setUploadingPhotos] = useState<Set<number>>(new Set())
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploadError, setUploadError] = useState<string>('')
   const { user } = useAuth()
   const { status, uploadAndProcess, processClientSide, isLoading, isGoogleVisionEnabled, reset } = useReceiptProcessing()
+
+  const clearError = useCallback(() => {
+    setUploadError('')
+  }, [])
+
+  const closeModal = useCallback(() => {
+    setShowUploadModal(false)
+    setUploadError('')
+  }, [])
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const file = acceptedFiles[0]
     if (file && file.type.startsWith('image/')) {
+      try {
+        setUploadError('')
+        
+        // Validate file size (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+          setUploadError('File size too large. Please select an image under 10MB.')
+          return
+        }
+        
+        setSelectedFile(file)
+        
+        // Create preview
+        const reader = new FileReader()
+        reader.onload = (e) => {
+          setPreview(e.target?.result as string)
+        }
+        reader.onerror = () => {
+          setUploadError('Failed to read the selected file. Please try again.')
+        }
+        reader.readAsDataURL(file)
+        
+        // Reset previous processing state
+        reset()
+        setSelectedProducts(new Set())
+        setProductsAdded(false)
+        setProductPhotos({})
+        setProductPhotoUrls({})
+        setProductWarranties({})
+        setShowWarrantyInputs(new Set())
+        setUploadingPhotos(new Set())
+        setReceiptDate(new Date().toISOString().split('T')[0])
+        setUploadError('')
+        setShowUploadModal(false)
+        
+        toast.success('Receipt image loaded successfully!')
+      } catch (error) {
+        console.error('File processing error:', error)
+        setUploadError('Failed to process the selected file. Please try again.')
+      }
+    } else {
+      setUploadError('Please select a valid image file (JPG, PNG, HEIC, WebP).')
+    }
+  }, [reset])
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.webp']
+    },
+    multiple: false,
+    maxSize: 10 * 1024 * 1024, // 10MB
+    noClick: true, // Disable click to open file dialog
+  })
+
+  const isMobile = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  }
+
+    const checkCameraSupport = useCallback(async () => {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return false
+      }
+      
+      // Check if camera devices are available
+      const devices = await navigator.mediaDevices.enumerateDevices()
+      const videoDevices = devices.filter(device => device.kind === 'videoinput')
+      return videoDevices.length > 0
+    } catch (error) {
+      console.error('Camera support check failed:', error)
+      return false
+    }
+  }, [])
+
+  const handleCameraCapture = useCallback(async () => {
+    try {
+      setUploadError('')
+      setShowUploadModal(false)
+      
+      // Show loading state
+      toast('Checking camera access...', {
+        icon: '📹',
+        duration: 2000,
+      })
+      
+      // First, check if we can actually access camera
+      const hasCamera = await checkCameraSupport()
+      
+      if (!hasCamera && !isMobile()) {
+        setUploadError('No camera detected on this device. Please use "Select File" to choose an image.')
+        return
+      }
+      
+      // Try to actually access the camera first (for desktop/supported browsers)
+      if (!isMobile()) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              facingMode: 'environment',
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            } 
+          })
+          
+          // If we get here, camera is available - stop the stream and use file input
+          stream.getTracks().forEach(track => track.stop())
+          
+          toast('Camera access granted! Please take your photo.', {
+            icon: '✅',
+            duration: 3000,
+          })
+        } catch (cameraError: any) {
+          console.error('Camera access denied:', cameraError)
+          
+          if (cameraError.name === 'NotAllowedError') {
+            setUploadError('Camera access denied. Please allow camera permissions in your browser and try again.')
+            return
+          } else if (cameraError.name === 'NotFoundError') {
+            setUploadError('No camera found on this device. Please use "Select File" instead.')
+            return
+          } else {
+            // Fall through to file input method
+            console.log('Camera access failed, falling back to file input')
+          }
+        }
+      }
+      
+      // Create file input with capture attribute
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/*'
+      
+      // Set capture attributes for mobile
+      if (isMobile()) {
+        input.setAttribute('capture', 'environment')
+        try {
+          (input as any).capture = 'environment'
+        } catch (e) {
+          console.log('Could not set capture property')
+        }
+      }
+      
+      let fileSelected = false
+      let timeoutId: NodeJS.Timeout
+      
+      input.onchange = (e) => {
+        fileSelected = true
+        clearTimeout(timeoutId)
+        
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (file) {
+          handleFileProcess(file)
+        } else {
+          setUploadError('No image was selected. Please try again.')
+        }
+      }
+      
+      input.onerror = () => {
+        setUploadError('Failed to access camera. Please try "Select File" instead.')
+      }
+      
+      // Set up timeout to detect if dialog was cancelled
+      timeoutId = setTimeout(() => {
+        if (!fileSelected) {
+          if (isMobile()) {
+            console.log('Camera capture may have been cancelled')
+          } else {
+            toast('💡 If file browser opened instead of camera, please select a photo or try on a mobile device for direct camera access.', {
+              icon: '💡',
+              duration: 6000,
+            })
+          }
+        }
+      }, 3000)
+      
+      // Trigger the input
+      input.click()
+      
+    } catch (error) {
+      console.error('Camera capture error:', error)
+      setUploadError('Failed to access camera. Please try "Select File" to choose an image from your device.')
+    }
+  }, [checkCameraSupport, isMobile])
+
+  const handleFileSelect = useCallback(() => {
+    try {
+      setUploadError('')
+      setShowUploadModal(false)
+      
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = 'image/jpeg,image/jpg,image/png,image/heic,image/webp'
+      
+      input.onchange = (e) => {
+        const file = (e.target as HTMLInputElement).files?.[0]
+        if (file) {
+          handleFileProcess(file)
+        }
+      }
+      
+      input.onerror = () => {
+        setUploadError('Failed to access file system. Please try again.')
+      }
+      
+      input.click()
+    } catch (error) {
+      console.error('File selection error:', error)
+      setUploadError('Failed to open file selector. Please try again.')
+    }
+  }, [])
+
+  const handleFileProcess = useCallback((file: File) => {
+    try {
+      setUploadError('')
+      
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        setUploadError('Please select a valid image file (JPG, PNG, HEIC, WebP).')
+        return
+      }
+      
+      // Validate file size (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadError('File size too large. Please select an image under 10MB.')
+        return
+      }
+      
       setSelectedFile(file)
       
       // Create preview
       const reader = new FileReader()
       reader.onload = (e) => {
         setPreview(e.target?.result as string)
+      }
+      reader.onerror = () => {
+        setUploadError('Failed to read the selected file. Please try again.')
       }
       reader.readAsDataURL(file)
       
@@ -63,17 +305,17 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
       setShowWarrantyInputs(new Set())
       setUploadingPhotos(new Set())
       setReceiptDate(new Date().toISOString().split('T')[0])
+      setUploadError('')
+      setShowUploadModal(false)
+      
+      toast.success('Receipt image loaded successfully!')
+    } catch (error) {
+      console.error('File processing error:', error)
+      setUploadError('Failed to process the selected file. Please try again.')
     }
   }, [reset])
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop,
-    accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.webp']
-    },
-    multiple: false,
-    maxSize: 10 * 1024 * 1024, // 10MB
-  })
+
 
   const handleProductPhotoUpload = async (productIndex: number, file: File) => {
     if (!user) {
@@ -267,37 +509,141 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
 
       {/* Upload Area */}
       {!preview ? (
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-            isDragActive 
-              ? 'border-blue-400 bg-blue-50' 
-              : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
-          }`}
-        >
-          <input {...getInputProps()} />
-          <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          
-          {isDragActive ? (
-            <p className="text-lg font-medium text-blue-600 mb-2">Drop your receipt here!</p>
-          ) : (
-            <>
-              <p className="text-lg font-medium text-gray-900 mb-2">
-                Upload receipt image
-              </p>
-              <p className="text-sm text-gray-600 mb-4">
-                Drag and drop or click to select
-              </p>
-            </>
+        <div className="space-y-4">
+          {/* Error Message */}
+          {uploadError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-5 w-5 text-red-500" />
+                  <span className="text-sm font-medium text-red-800">Upload Error</span>
+                </div>
+                <button
+                  onClick={clearError}
+                  className="text-red-500 hover:text-red-700"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="text-sm text-red-700 mt-1">{uploadError}</p>
+            </div>
           )}
-          
-          <div className="flex items-center justify-center gap-4 text-xs text-gray-500">
-            <span>📱 JPG, PNG, HEIC</span>
-            <span>•</span>
-            <span>☁️ Max 10MB</span>
-            <span>•</span>
-            <span>🤖 AI Processing Ready</span>
+
+          {/* Main Upload Button */}
+          <div
+            {...getRootProps()}
+            className={`border-2 border-dashed rounded-xl p-12 text-center transition-all cursor-pointer ${
+              isDragActive 
+                ? 'border-blue-400 bg-blue-50 scale-105' 
+                : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+            }`}
+            onClick={() => setShowUploadModal(true)}
+          >
+            <input {...getInputProps()} />
+            
+            <div className="space-y-4">
+              <div className="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center shadow-lg">
+                {isDragActive ? (
+                  <Download className="h-8 w-8 text-white animate-bounce" />
+                ) : (
+                  <Upload className="h-8 w-8 text-white" />
+                )}
+              </div>
+              
+              {isDragActive ? (
+                <div>
+                  <p className="text-xl font-semibold text-blue-600 mb-2">Drop your receipt here!</p>
+                  <p className="text-sm text-blue-500">Release to upload</p>
+                </div>
+              ) : (
+                <div>
+                  <p className="text-xl font-semibold text-gray-900 mb-2">
+                    Upload Receipt
+                  </p>
+                  <p className="text-gray-600 mb-4">
+                    Drag and drop your receipt here, or click to choose how to upload
+                  </p>
+                  <div className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                    <Camera className="h-4 w-4 mr-2" />
+                    Choose Upload Method
+                  </div>
+                </div>
+              )}
+              
+              <div className="flex items-center justify-center gap-6 text-xs text-gray-500 pt-4">
+                <span>📱 JPG, PNG, HEIC</span>
+                <span>☁️ Max 10MB</span>
+                <span>🤖 AI Ready</span>
+              </div>
+            </div>
           </div>
+
+          {/* Upload Options Modal */}
+          {showUploadModal && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-xl font-semibold text-gray-900">Choose Upload Method</h3>
+                    <button
+                      onClick={closeModal}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <X className="h-5 w-5 text-gray-500" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Camera Option */}
+                    <button
+                      onClick={handleCameraCapture}
+                      className="w-full flex items-center p-4 border-2 border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all group"
+                    >
+                      <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mr-4 group-hover:bg-blue-200 transition-colors">
+                        <Camera className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900">Use Camera</div>
+                        <div className="text-sm text-gray-500">
+                          {isMobile() ? 'Take a photo of your receipt' : 'Access camera to take photo'}
+                        </div>
+                        <div className="text-xs text-blue-600 mt-1">
+                          {isMobile() ? '📱 Direct camera access' : '💻 Camera with permission check'}
+                        </div>
+                        {!isMobile() && (
+                          <div className="text-xs text-amber-600 mt-1">
+                            ⚠️ Requires camera permissions
+                          </div>
+                        )}
+                      </div>
+                    </button>
+
+                    {/* File Selection Option */}
+                    <button
+                      onClick={handleFileSelect}
+                      className="w-full flex items-center p-4 border-2 border-gray-200 rounded-xl hover:border-green-300 hover:bg-green-50 transition-all group"
+                    >
+                      <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mr-4 group-hover:bg-green-200 transition-colors">
+                        <FileImage className="h-6 w-6 text-green-600" />
+                      </div>
+                      <div className="text-left">
+                        <div className="font-medium text-gray-900">Select File</div>
+                        <div className="text-sm text-gray-500">Choose from gallery or files</div>
+                        <div className="text-xs text-green-600 mt-1">💻 All devices</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <div className="text-sm text-gray-600 text-center">
+                      <p className="font-medium mb-1">Supported formats:</p>
+                      <p>JPG, PNG, HEIC, WebP • Max 10MB</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* Preview and Processing */

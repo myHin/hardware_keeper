@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage'
 import LoginPage from './pages/LoginPage'
 import ProductsPage from './pages/ProductsPage'
 import AddProductPage from './pages/AddProductPage'
+import ManualProductPage from './pages/ManualProductPage'
 import CommunityPage from './pages/CommunityPage'
 import ProfilePage from './pages/ProfilePage'
 
@@ -37,6 +38,14 @@ function App() {
           <PrivateRoute>
             <Layout>
               <AddProductPage />
+            </Layout>
+          </PrivateRoute>
+        } />
+        
+        <Route path="/add-manual" element={
+          <PrivateRoute>
+            <Layout>
+              <ManualProductPage />
             </Layout>
           </PrivateRoute>
         } />
