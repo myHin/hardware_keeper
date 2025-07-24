@@ -6,7 +6,6 @@ import {
   Loader2, 
   CheckCircle, 
   XCircle, 
-  Eye,
   Download,
   Trash2,
   Zap,
@@ -25,16 +24,15 @@ import toast from 'react-hot-toast'
 
 interface ReceiptProcessorProps {
   onProductsExtracted: (products: ExtractedProductInfo[]) => void
-  onReceiptUploaded?: (url: string) => void
 }
 
-export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: ReceiptProcessorProps) {
+export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps) {
   const [preview, setPreview] = useState<string | null>(null)
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [productsAdded, setProductsAdded] = useState<boolean>(false)
   const [receiptDate, setReceiptDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [productPhotos, setProductPhotos] = useState<{[key: number]: File}>({})
+  const [, setProductPhotos] = useState<{[key: number]: File}>({})
   const [productPhotoUrls, setProductPhotoUrls] = useState<{[key: number]: string}>({})
   const [productWarranties, setProductWarranties] = useState<{[key: number]: {months?: number, hasWarranty: boolean}}>({})
   const [showWarrantyInputs, setShowWarrantyInputs] = useState<Set<number>>(new Set())
@@ -42,7 +40,7 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploadError, setUploadError] = useState<string>('')
   const { user } = useAuth()
-  const { status, uploadAndProcess, processClientSide, isLoading, isGoogleVisionEnabled, reset } = useReceiptProcessing()
+  const { status, uploadAndProcess, processClientSide, isLoading, reset } = useReceiptProcessing()
 
   const clearError = useCallback(() => {
     setUploadError('')

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+
 import { useNavigate, Link } from 'react-router-dom'
 import { 
   ArrowLeft, 
@@ -16,7 +16,7 @@ import toast from 'react-hot-toast'
 export default function AddProductPage() {
   const navigate = useNavigate()
   const createProduct = useCreateProduct()
-  const [receiptUrl, setReceiptUrl] = useState<string>('')
+
 
   const handleProductsExtracted = async (products: ExtractedProductInfo[]) => {
     if (products.length === 0) return
@@ -84,10 +84,9 @@ export default function AddProductPage() {
           </div>
         </div>
         
-        <ReceiptProcessor 
-          onProductsExtracted={handleProductsExtracted}
-          onReceiptUploaded={setReceiptUrl}
-        />
+                  <ReceiptProcessor 
+            onProductsExtracted={handleProductsExtracted}
+          />
       </div>
 
       {/* Alternative Option - Manual Entry */}

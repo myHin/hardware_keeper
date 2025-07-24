@@ -2,7 +2,7 @@ import { ReceiptProcessingResult, ReceiptText, ExtractedProductInfo } from '../t
 import { getGoogleVisionService, isGoogleVisionConfigured } from './googleVisionService'
 
 // Mock OCR service - used as fallback when Google Vision is not configured
-async function extractTextFromImageMock(imageUrl: string): Promise<ReceiptText> {
+async function extractTextFromImageMock(_imageUrl: string): Promise<ReceiptText> {
   // Simulate API call delay
   await new Promise(resolve => setTimeout(resolve, 2000))
   

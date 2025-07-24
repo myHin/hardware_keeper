@@ -1,14 +1,11 @@
 import { useState, useCallback } from 'react'
 import { useMutation } from 'react-query'
-import { uploadReceiptImage } from '../lib/storage'
-import { processReceipt, processReceiptFromFile } from '../services/receiptProcessor'
+import { processReceiptFromFile } from '../services/receiptProcessor'
 import { isGoogleVisionConfigured } from '../services/googleVisionService'
-import { ReceiptProcessingStatus, ReceiptProcessingResult } from '../types/receipt'
-import { useAuth } from '../contexts/AuthContext'
+import { ReceiptProcessingStatus } from '../types/receipt'
 import toast from 'react-hot-toast'
 
 export function useReceiptProcessing() {
-  const { user } = useAuth()
   const [status, setStatus] = useState<ReceiptProcessingStatus>({
     status: 'idle',
     progress: 0,
@@ -64,7 +61,7 @@ export function useReceiptProcessing() {
 
   const processClientSide = useMutation(
     async (file: File) => {
-      const isGoogleVisionEnabled = isGoogleVisionConfigured()
+      isGoogleVisionConfigured()
       
       setStatus({
         status: 'processing',
