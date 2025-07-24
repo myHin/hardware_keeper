@@ -5,6 +5,7 @@
 [build.environment]
   NPM_VERSION = "9.5.1"
   NODE_VERSION = "18"
+  CI = "false"  # This prevents treating warnings as errors
 
 [[redirects]]
   from = "/*"

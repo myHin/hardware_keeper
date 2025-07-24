@@ -11,12 +11,9 @@ import { ReceiptProcessor } from '../components/ReceiptProcessor'
 import { ExtractedProductInfo } from '../types/receipt'
 import toast from 'react-hot-toast'
 
-
-
 export default function AddProductPage() {
   const navigate = useNavigate()
   const createProduct = useCreateProduct()
-
 
   const handleProductsExtracted = async (products: ExtractedProductInfo[]) => {
     if (products.length === 0) return

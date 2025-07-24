@@ -32,7 +32,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [productsAdded, setProductsAdded] = useState<boolean>(false)
   const [receiptDate, setReceiptDate] = useState<string>(new Date().toISOString().split('T')[0])
-  const [, setProductPhotos] = useState<{[key: number]: File}>({})
   const [productPhotoUrls, setProductPhotoUrls] = useState<{[key: number]: string}>({})
   const [productWarranties, setProductWarranties] = useState<{[key: number]: {months?: number, hasWarranty: boolean}}>({})
   const [showWarrantyInputs, setShowWarrantyInputs] = useState<Set<number>>(new Set())
@@ -79,7 +78,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
         reset()
         setSelectedProducts(new Set())
         setProductsAdded(false)
-        setProductPhotos({})
         setProductPhotoUrls({})
         setProductWarranties({})
         setShowWarrantyInputs(new Set())
@@ -297,7 +295,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
       reset()
       setSelectedProducts(new Set())
       setProductsAdded(false)
-      setProductPhotos({})
       setProductPhotoUrls({})
       setProductWarranties({})
       setShowWarrantyInputs(new Set())
@@ -320,11 +317,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
       toast.error('Please log in to upload product photos')
       return
     }
-
-    setProductPhotos(prev => ({
-      ...prev,
-      [productIndex]: file
-    }))
     
     setUploadingPhotos(prev => new Set(prev).add(productIndex))
     
@@ -482,7 +474,6 @@ export function ReceiptProcessor({ onProductsExtracted }: ReceiptProcessorProps)
     setSelectedFile(null)
     setSelectedProducts(new Set())
     setProductsAdded(false)
-    setProductPhotos({})
     setProductPhotoUrls({})
     setProductWarranties({})
     setShowWarrantyInputs(new Set())
