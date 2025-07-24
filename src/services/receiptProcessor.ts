@@ -485,7 +485,7 @@ async function parseProductsFromText(receiptText: ReceiptText): Promise<Extracte
 
 export async function processReceipt(imageUrl: string): Promise<ReceiptProcessingResult> {
   try {
-    console.log('Processing receipt with', isGoogleVisionConfigured() ? 'Google Vision API' : 'mock OCR')
+    console.log('Processing receipt with AI text extraction')
     
     // Step 1: Extract text from image using OCR
     const receiptText = isGoogleVisionConfigured() 
@@ -528,7 +528,7 @@ export async function processReceipt(imageUrl: string): Promise<ReceiptProcessin
 // Process receipt from file (for local processing)
 export async function processReceiptFromFile(imageFile: File): Promise<ReceiptProcessingResult> {
   try {
-    console.log('Processing receipt file with', isGoogleVisionConfigured() ? 'Google Vision API' : 'mock OCR')
+    console.log('Processing receipt file with AI text extraction')
     
     // Step 1: Extract text from file
     const receiptText = isGoogleVisionConfigured()
@@ -552,12 +552,27 @@ export async function processReceiptFromFile(imageFile: File): Promise<ReceiptPr
     const totalMatch = receiptText.rawText.match(/Total:\s*\$?([\d,]+\.?\d*)/i)
     const storeMatch = receiptText.rawText.match(/^([^\n]+)/m)
     
+    // Enhanced date extraction
+    let receiptDate: string | undefined
+    if (dateMatch) {
+      try {
+        const dateStr = dateMatch[1] || dateMatch[0]
+        const date = new Date(dateStr.trim())
+        if (!isNaN(date.getTime())) {
+          receiptDate = date.toISOString().split('T')[0]
+        }
+      } catch (e) {
+        console.warn('Could not parse receipt date:', dateMatch[0])
+      }
+    }
+    
     return {
       text: receiptText,
       products,
       store: storeMatch ? storeMatch[1].trim() : undefined,
       total: totalMatch ? parseFloat(totalMatch[1].replace(',', '')) : undefined,
       date: dateMatch ? (dateMatch[1] || dateMatch[0]).trim() : undefined,
+      receiptDate, // New field for properly formatted date
       success: true
     }
   } catch (error) {

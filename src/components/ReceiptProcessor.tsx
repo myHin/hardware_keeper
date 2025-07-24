@@ -11,10 +11,15 @@ import {
   Trash2,
   Zap,
   Brain,
-  Settings
+  Camera,
+  Calendar,
+  Shield,
+  Clock
 } from 'lucide-react'
 import { useReceiptProcessing } from '../hooks/useReceiptProcessing'
 import { ExtractedProductInfo } from '../types/receipt'
+import { uploadProductImage } from '../lib/storage'
+import { useAuth } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 interface ReceiptProcessorProps {
@@ -27,6 +32,13 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [selectedProducts, setSelectedProducts] = useState<Set<number>>(new Set())
   const [productsAdded, setProductsAdded] = useState<boolean>(false)
+  const [receiptDate, setReceiptDate] = useState<string>(new Date().toISOString().split('T')[0])
+  const [productPhotos, setProductPhotos] = useState<{[key: number]: File}>({})
+  const [productPhotoUrls, setProductPhotoUrls] = useState<{[key: number]: string}>({})
+  const [productWarranties, setProductWarranties] = useState<{[key: number]: {months?: number, hasWarranty: boolean}}>({})
+  const [showWarrantyInputs, setShowWarrantyInputs] = useState<Set<number>>(new Set())
+  const [uploadingPhotos, setUploadingPhotos] = useState<Set<number>>(new Set())
+  const { user } = useAuth()
   const { status, uploadAndProcess, processClientSide, isLoading, isGoogleVisionEnabled, reset } = useReceiptProcessing()
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -45,6 +57,12 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
       reset()
       setSelectedProducts(new Set())
       setProductsAdded(false)
+      setProductPhotos({})
+      setProductPhotoUrls({})
+      setProductWarranties({})
+      setShowWarrantyInputs(new Set())
+      setUploadingPhotos(new Set())
+      setReceiptDate(new Date().toISOString().split('T')[0])
     }
   }, [reset])
 
@@ -57,6 +75,70 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
     maxSize: 10 * 1024 * 1024, // 10MB
   })
 
+  const handleProductPhotoUpload = async (productIndex: number, file: File) => {
+    if (!user) {
+      toast.error('Please log in to upload product photos')
+      return
+    }
+
+    setProductPhotos(prev => ({
+      ...prev,
+      [productIndex]: file
+    }))
+    
+    setUploadingPhotos(prev => new Set(prev).add(productIndex))
+    
+    try {
+      const result = await uploadProductImage(file, user.id)
+      
+      if (result.error) {
+        toast.error(`Failed to upload photo: ${result.error}`)
+        return
+      }
+
+      setProductPhotoUrls(prev => ({
+        ...prev,
+        [productIndex]: result.url
+      }))
+      
+      toast.success('Product photo uploaded successfully!')
+    } catch (error) {
+      console.error('Photo upload error:', error)
+      toast.error('Failed to upload product photo')
+    } finally {
+      setUploadingPhotos(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(productIndex)
+        return newSet
+      })
+    }
+  }
+
+  const handleWarrantyChange = (productIndex: number, months?: number, hasWarranty: boolean = true) => {
+    setProductWarranties(prev => ({
+      ...prev,
+      [productIndex]: { months, hasWarranty }
+    }))
+  }
+
+  const toggleWarrantyInput = (productIndex: number) => {
+    setShowWarrantyInputs(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(productIndex)) {
+        newSet.delete(productIndex)
+      } else {
+        newSet.add(productIndex)
+      }
+      return newSet
+    })
+  }
+
+  const calculateWarrantyExpiration = (purchaseDate: string, warrantyMonths: number): string => {
+    const date = new Date(purchaseDate)
+    date.setMonth(date.getMonth() + warrantyMonths)
+    return date.toISOString().split('T')[0]
+  }
+
   const handleProcess = async (useCloudProcessing = true) => {
     if (!selectedFile) return
 
@@ -65,14 +147,27 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
         ? await uploadAndProcess(selectedFile)
         : await processClientSide(selectedFile)
 
-      // Note: Not uploading to storage in this simplified version
-      // if (result.receiptUrl && onReceiptUploaded) {
-      //   onReceiptUploaded(result.receiptUrl)
-      // }
+      // Extract receipt date if available, otherwise use user input
+      if (result.receiptDate) {
+        setReceiptDate(result.receiptDate)
+      }
 
       // Auto-select all products initially for convenience
       if (result.products.length > 0) {
         setSelectedProducts(new Set(result.products.map((_, index) => index)))
+        
+        // Initialize warranty settings for each product
+        const warranties: {[key: number]: {months?: number, hasWarranty: boolean}} = {}
+        result.products.forEach((product, index) => {
+          if (product.warrantyMonths) {
+            warranties[index] = { months: product.warrantyMonths, hasWarranty: true }
+          } else {
+            warranties[index] = { hasWarranty: false }
+            setShowWarrantyInputs(prev => new Set(prev).add(index))
+          }
+        })
+        setProductWarranties(warranties)
+        
         toast.success(
           `Found ${result.products.length} products! All are pre-selected for your convenience.`,
           {
@@ -89,7 +184,28 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
   const handleUseSelected = () => {
     if (!status.result) return
 
-    const selected = Array.from(selectedProducts).map(index => status.result!.products[index])
+    const selected = Array.from(selectedProducts).map(index => {
+      const product = status.result!.products[index]
+      const warranty = productWarranties[index]
+      const productImageUrl = productPhotoUrls[index]
+
+      // Calculate warranty expiration if warranty is set
+      let warrantyExpiresAt = undefined
+      if (warranty?.hasWarranty && warranty.months) {
+        warrantyExpiresAt = calculateWarrantyExpiration(receiptDate, warranty.months)
+      }
+
+      return {
+        ...product,
+        purchaseDate: receiptDate,
+        warrantyMonths: warranty?.hasWarranty ? warranty.months : undefined,
+        warrantyExpiresAt,
+        productImageUrl,
+        hasWarranty: warranty?.hasWarranty ?? false,
+        warrantyUserInput: showWarrantyInputs.has(index)
+      }
+    })
+    
     onProductsExtracted(selected)
     
     // Show success message
@@ -126,6 +242,12 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
     setSelectedFile(null)
     setSelectedProducts(new Set())
     setProductsAdded(false)
+    setProductPhotos({})
+    setProductPhotoUrls({})
+    setProductWarranties({})
+    setShowWarrantyInputs(new Set())
+    setUploadingPhotos(new Set())
+    setReceiptDate(new Date().toISOString().split('T')[0])
     reset()
   }
 
@@ -141,20 +263,7 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
 
   return (
     <div className="space-y-6">
-      {/* Google Vision Status */}
-      <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
-        isGoogleVisionEnabled 
-          ? 'bg-green-50 text-green-800 border border-green-200'
-          : 'bg-yellow-50 text-yellow-800 border border-yellow-200'
-      }`}>
-        <Settings className="h-4 w-4" />
-        <span>
-          {isGoogleVisionEnabled 
-            ? '🟢 Google Vision API enabled - Real OCR processing'
-            : '🟡 Using mock OCR - Add VITE_GOOGLE_VISION_API_KEY for real processing'
-          }
-        </span>
-      </div>
+
 
       {/* Upload Area */}
       {!preview ? (
@@ -187,7 +296,7 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
             <span>•</span>
             <span>☁️ Max 10MB</span>
             <span>•</span>
-            <span>{isGoogleVisionEnabled ? '🤖 Google Vision Ready' : '🧪 Mock Processing'}</span>
+            <span>🤖 AI Processing Ready</span>
           </div>
         </div>
       ) : (
@@ -199,11 +308,6 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
               <div className="flex items-center gap-2">
                 <FileImage className="h-5 w-5 text-blue-600" />
                 <span className="font-medium text-gray-900">Receipt Preview</span>
-                {isGoogleVisionEnabled && (
-                  <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full">
-                    Google Vision Ready
-                  </span>
-                )}
               </div>
               <button
                 onClick={clearAll}
@@ -223,26 +327,49 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
             </div>
           </div>
 
+          {/* Receipt Date Input */}
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Calendar className="h-5 w-5 text-blue-600" />
+              <span className="font-medium text-gray-900">Purchase Date</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="date"
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <span className="text-sm text-gray-600">
+                {status.result?.receiptDate ? 'Detected from receipt' : 'Manual input (receipt date not detected)'}
+              </span>
+            </div>
+          </div>
+
           {/* Processing Controls */}
           {status.status === 'idle' && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <button
-                onClick={() => handleProcess(true)}
-                disabled={isLoading}
-                className="btn btn-primary flex items-center justify-center"
-              >
-                <Zap className="h-4 w-4 mr-2" />
-                {isGoogleVisionEnabled ? 'Process with Google Vision' : 'Process with Mock AI'}
-              </button>
-              
-              <button
-                onClick={() => handleProcess(false)}
-                disabled={isLoading}
-                className="btn btn-outline flex items-center justify-center"
-              >
-                <Brain className="h-4 w-4 mr-2" />
-                {isGoogleVisionEnabled ? 'Alternative Processing' : 'Alternative Mock Processing'}
-              </button>
+            <div className="flex flex-col sm:grid sm:grid-cols-2 gap-3 sm:gap-4">
+                              <button
+                  onClick={() => handleProcess(true)}
+                  disabled={isLoading}
+                  className="btn btn-primary w-full"
+                >
+                  <Zap className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span className="truncate">
+                    Process Receipt
+                  </span>
+                </button>
+                
+                <button
+                  onClick={() => handleProcess(false)}
+                  disabled={isLoading}
+                  className="btn btn-outline w-full"
+                >
+                  <Brain className="h-4 w-4 mr-2 flex-shrink-0" />
+                  <span className="truncate">
+                    Alternative Processing
+                  </span>
+                </button>
             </div>
           )}
 
@@ -306,14 +433,9 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
                     <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
                       <CheckCircle className="h-5 w-5 text-green-500" />
                       {status.result.products.length} Products Detected
-                      {isGoogleVisionEnabled && (
-                        <span className="ml-2 px-2 py-1 text-xs bg-green-100 text-green-800 rounded-full font-medium">
-                          Google Vision AI
-                        </span>
-                      )}
                     </h3>
                     <p className="text-sm text-gray-600 mt-1">
-                      Review and select which products to add to your inventory
+                      Review products, add photos, and configure warranty tracking
                     </p>
                   </div>
                   <div className="text-right">
@@ -328,48 +450,50 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
               </div>
 
               {/* Quick Actions */}
-              <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex gap-2">
+              <div className="px-4 sm:px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => setSelectedProducts(new Set(Array.from({length: status.result!.products.length}, (_, i) => i)))}
-                      className="px-3 py-1 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-100 hover:bg-blue-200 rounded-md transition-colors"
                     >
                       Select All
                     </button>
                     <button
                       onClick={() => setSelectedProducts(new Set())}
-                      className="px-3 py-1 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                      className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
                     >
                       Clear All
                     </button>
                   </div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 whitespace-nowrap">
                     Total Value: ${status.result.products.reduce((sum, p) => sum + (p.price || 0), 0).toFixed(2)}
                   </div>
                 </div>
               </div>
 
               {/* Products Grid */}
-              <div className="p-6">
-                <div className="grid gap-3">
+              <div className="p-4 sm:p-6">
+                <div className="space-y-4">
                   {status.result.products.map((product, index) => (
                     <div
                       key={index}
-                      className={`group relative border-2 rounded-xl p-4 transition-all duration-200 cursor-pointer ${
+                      className={`group relative border-2 rounded-xl p-4 transition-all duration-200 ${
                         selectedProducts.has(index)
                           ? 'border-blue-400 bg-blue-50 shadow-md ring-2 ring-blue-100'
                           : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                       }`}
-                      onClick={() => toggleProductSelection(index)}
                     >
                       {/* Selection Indicator */}
                       <div className="absolute top-3 right-3">
-                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                          selectedProducts.has(index)
-                            ? 'border-blue-500 bg-blue-500'
-                            : 'border-gray-300 group-hover:border-gray-400'
-                        }`}>
+                        <div 
+                          className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer ${
+                            selectedProducts.has(index)
+                              ? 'border-blue-500 bg-blue-500'
+                              : 'border-gray-300 group-hover:border-gray-400'
+                          }`}
+                          onClick={() => toggleProductSelection(index)}
+                        >
                           {selectedProducts.has(index) && (
                             <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
                               <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
@@ -378,41 +502,144 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
                         </div>
                       </div>
 
-                      <div className="pr-8">
-                        <div className="flex items-start justify-between mb-2">
-                          <h4 className="font-semibold text-gray-900 text-lg leading-tight">
-                            {product.name}
-                          </h4>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 mb-3">
-                          {product.productType && (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                              {product.productType}
-                            </span>
-                          )}
-                          {product.price && (
-                            <span className="text-xl font-bold text-green-600">
-                              ${product.price.toFixed(2)}
-                            </span>
-                          )}
-                        </div>
-                        
-                        <div className="flex items-center gap-4 text-sm text-gray-500">
-                          {product.warrantyMonths && (
+                      <div className="pr-8 space-y-4">
+                        {/* Product Info */}
+                        <div>
+                          <div className="flex items-start justify-between mb-2">
+                            <h4 className="font-semibold text-gray-900 text-lg leading-tight">
+                              {product.name}
+                            </h4>
+                          </div>
+                          
+                          <div className="flex items-center gap-4 mb-3">
+                            {product.productType && (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                                {product.productType}
+                              </span>
+                            )}
+                            {product.price && (
+                              <span className="text-xl font-bold text-green-600">
+                                ${product.price.toFixed(2)}
+                              </span>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-center gap-4 text-sm text-gray-500">
+                            {product.warrantyMonths && (
+                              <span className="flex items-center gap-1">
+                                <Shield className="w-4 h-4" />
+                                {product.warrantyMonths} months warranty (detected)
+                              </span>
+                            )}
                             <span className="flex items-center gap-1">
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              {product.warrantyMonths} months warranty
+                              <Brain className="w-4 h-4" />
+                              {Math.round(product.confidence * 100)}% confidence
                             </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            {Math.round(product.confidence * 100)}% confidence
-                          </span>
+                          </div>
+                        </div>
+
+                                                {/* Product Photo Upload */}
+                        <div className="border-t pt-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Camera className="h-4 w-4 text-gray-600 flex-shrink-0" />
+                            <span className="text-sm font-medium text-gray-900">Product Photo (Optional)</span>
+                          </div>
+                          <div className="space-y-2">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) handleProductPhotoUpload(index, file)
+                              }}
+                              disabled={uploadingPhotos.has(index)}
+                              className="w-full text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+                            />
+                            {uploadingPhotos.has(index) && (
+                              <p className="text-xs text-blue-600 flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                                Uploading photo...
+                              </p>
+                            )}
+                            {productPhotoUrls[index] && !uploadingPhotos.has(index) && (
+                              <p className="text-xs text-green-600">
+                                ✓ Photo uploaded successfully
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Warranty Settings */}
+                        <div className="border-t pt-4">
+                          <div className="flex items-center gap-2 mb-3">
+                            <Shield className="h-4 w-4 text-gray-600" />
+                            <span className="text-sm font-medium text-gray-900">Warranty Tracking</span>
+                          </div>
+                          
+                          <div className="space-y-3">
+                            {/* No Warranty Option */}
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`warranty-${index}`}
+                                checked={!productWarranties[index]?.hasWarranty}
+                                onChange={() => handleWarrantyChange(index, undefined, false)}
+                                className="text-blue-600"
+                              />
+                              <span className="text-sm text-gray-700">No warranty / Don't track warranty</span>
+                            </label>
+
+                            {/* Detected Warranty */}
+                            {product.warrantyMonths && (
+                              <label className="flex items-center gap-2">
+                                <input
+                                  type="radio"
+                                  name={`warranty-${index}`}
+                                  checked={productWarranties[index]?.hasWarranty && productWarranties[index]?.months === product.warrantyMonths}
+                                  onChange={() => handleWarrantyChange(index, product.warrantyMonths, true)}
+                                  className="text-blue-600"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  Use detected warranty: {product.warrantyMonths} months
+                                </span>
+                              </label>
+                            )}
+
+                            {/* Custom Warranty */}
+                            <label className="flex items-center gap-2">
+                              <input
+                                type="radio"
+                                name={`warranty-${index}`}
+                                checked={showWarrantyInputs.has(index)}
+                                onChange={() => toggleWarrantyInput(index)}
+                                className="text-blue-600"
+                              />
+                              <span className="text-sm text-gray-700">Custom warranty period</span>
+                            </label>
+
+                            {showWarrantyInputs.has(index) && (
+                              <div className="ml-6 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    placeholder="Months"
+                                    min="1"
+                                    max="120"
+                                    value={productWarranties[index]?.months || ''}
+                                    onChange={(e) => handleWarrantyChange(index, parseInt(e.target.value) || undefined, true)}
+                                    className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                  />
+                                  <span className="text-xs text-gray-500">months</span>
+                                </div>
+                                {productWarranties[index]?.months && (
+                                  <div className="text-xs text-gray-500 flex items-center gap-1">
+                                    <Clock className="w-3 h-3 flex-shrink-0" />
+                                    <span>Expires: {calculateWarrantyExpiration(receiptDate, productWarranties[index].months!)}</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -421,36 +648,38 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
               </div>
 
               {/* Action Bar */}
-              <div className="px-6 py-4 bg-gray-50 border-t border-gray-200">
-                <div className="flex items-center justify-between">
+              <div className="px-4 sm:px-6 py-4 bg-gray-50 border-t border-gray-200">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="text-sm text-gray-600">
                     {selectedProducts.size === 0 && "Select products above to save them to your inventory"}
                     {selectedProducts.size === 1 && "1 product ready to save"}
                     {selectedProducts.size > 1 && `${selectedProducts.size} products ready to save`}
                   </div>
                   
-                  <div className="flex gap-3">
+                  <div className="flex flex-col sm:flex-row gap-3">
                     <button
                       onClick={clearAll}
-                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                      className="btn btn-secondary w-full sm:w-auto"
                     >
                       Start Over
                     </button>
                     <button
                       onClick={handleUseSelected}
                       disabled={selectedProducts.size === 0}
-                      className={`px-6 py-2 text-sm font-medium rounded-lg transition-all ${
+                      className={`btn w-full sm:w-auto ${
                         selectedProducts.size === 0
-                          ? 'bg-gray-200 text-gray-500 cursor-not-allowed'
-                          : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg'
+                          ? 'btn-secondary opacity-50 cursor-not-allowed'
+                          : 'btn-primary'
                       }`}
                     >
-                      {selectedProducts.size === 0 
-                        ? 'Select Products' 
-                        : selectedProducts.size === 1 
-                          ? 'Save 1 Product' 
-                          : `Save ${selectedProducts.size} Products`
-                      }
+                      <span className="truncate">
+                        {selectedProducts.size === 0 
+                          ? 'Select Products' 
+                          : selectedProducts.size === 1 
+                            ? 'Save 1 Product' 
+                            : `Save ${selectedProducts.size} Products`
+                        }
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -460,18 +689,15 @@ export function ReceiptProcessor({ onProductsExtracted, onReceiptUploaded }: Rec
 
           {/* No Products Found */}
           {status.result && status.result.products.length === 0 && status.status === 'completed' && (
-            <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="text-center py-8 px-4 bg-gray-50 rounded-lg border border-gray-200">
               <XCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No products detected</h3>
-              <p className="text-gray-600 mb-4">
-                {isGoogleVisionEnabled 
-                  ? "Google Vision couldn't identify any products in this receipt."
-                  : "The mock AI couldn't identify any products. Try enabling Google Vision API."
-                }
+              <p className="text-gray-600 mb-4 text-sm sm:text-base">
+                No products could be detected in this receipt. Please try with a clearer image or add products manually.
               </p>
               <button
                 onClick={clearAll}
-                className="btn btn-secondary"
+                className="btn btn-secondary w-full sm:w-auto"
               >
                 Try Another Receipt
               </button>

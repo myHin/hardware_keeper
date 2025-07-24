@@ -11,6 +11,7 @@ export interface Product {
   warranty_expires_at: string | null
   purchase_price: number | null
   receipt_image_url: string | null
+  product_image_url: string | null
   status: ProductStatus
   discontinue_reason: string | null
   is_public: boolean
@@ -26,6 +27,7 @@ export interface CreateProductData {
   purchase_date?: string
   warranty_months?: number
   purchase_price?: number
+  product_image_url?: string
   status?: ProductStatus
   is_public?: boolean
   notes?: string

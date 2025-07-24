@@ -4,7 +4,7 @@
 
 @layer base {
   html {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   }
   
   body {
@@ -15,33 +15,156 @@
 
   /* Mobile-first touch targets */
   button, input, select, textarea {
-    @apply min-h-[44px];
+    @apply min-h-[48px];
+  }
+
+  /* Improve focus states */
+  *:focus {
+    @apply outline-none ring-2 ring-primary-500 ring-offset-2;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
   }
 }
 
 @layer components {
+  /* Modern Button Styles */
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200 min-h-[44px] flex items-center justify-center;
+    @apply px-4 py-3 rounded-xl font-medium transition-all duration-200 min-h-[48px] flex items-center justify-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    /* Better text wrapping for mobile */
+    word-wrap: break-word;
+    text-align: center;
   }
   
   .btn-primary {
-    @apply bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800;
+    @apply bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 shadow-lg hover:shadow-xl;
   }
   
   .btn-secondary {
-    @apply bg-gray-200 text-gray-900 hover:bg-gray-300 active:bg-gray-400;
+    @apply bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 active:bg-gray-100 shadow-sm hover:shadow-md;
   }
   
   .btn-outline {
-    @apply border border-primary-600 text-primary-600 hover:bg-primary-50 active:bg-primary-100;
+    @apply border-2 border-primary-600 text-primary-600 hover:bg-primary-50 active:bg-primary-100 bg-white shadow-sm hover:shadow-md;
   }
 
+  .btn-ghost {
+    @apply text-gray-600 hover:text-gray-900 hover:bg-gray-100 active:bg-gray-200;
+  }
+
+  .btn-sm {
+    @apply px-3 py-2 min-h-[40px] text-sm rounded-lg;
+  }
+
+  .btn-lg {
+    @apply px-6 py-4 min-h-[56px] text-lg rounded-2xl;
+  }
+
+  /* Mobile-specific button styles */
+  @media (max-width: 640px) {
+    .btn {
+      @apply px-3 py-3 text-sm;
+      min-height: 44px; /* iOS recommended touch target */
+    }
+    
+    .btn-lg {
+      @apply px-4 py-3 text-base;
+      min-height: 48px;
+    }
+  }
+
+  /* Modern Input Styles */
   .input {
-    @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[44px];
+    @apply w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-primary-500 min-h-[48px] bg-white transition-all duration-200 placeholder-gray-400;
   }
 
+  .input-error {
+    @apply border-red-300 focus:ring-red-500 focus:border-red-500;
+  }
+
+  /* Modern Card Styles */
   .card {
-    @apply bg-white rounded-lg shadow-sm border border-gray-200 p-4;
+    @apply bg-white rounded-2xl shadow-sm border border-gray-200 p-6 transition-all duration-200;
+  }
+
+  .card-hover {
+    @apply hover:shadow-lg hover:-translate-y-1;
+  }
+
+  .card-glass {
+    @apply bg-white/80 backdrop-blur-xl border border-gray-200/50 shadow-glass;
+  }
+
+  /* Navigation Styles */
+  .nav-item {
+    @apply flex items-center justify-center gap-1 px-3 py-2 rounded-xl text-sm font-medium transition-all duration-200 min-h-[48px];
+  }
+
+  .nav-item-active {
+    @apply bg-primary-100 text-primary-700;
+  }
+
+  .nav-item-inactive {
+    @apply text-gray-500 hover:text-gray-700 hover:bg-gray-100;
+  }
+
+  /* Badge Styles */
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-xs font-medium;
+  }
+
+  .badge-primary {
+    @apply bg-primary-100 text-primary-800;
+  }
+
+  .badge-success {
+    @apply bg-accent-100 text-accent-800;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-error {
+    @apply bg-red-100 text-red-800;
+  }
+
+  /* Grid Layouts */
+  .grid-responsive {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4;
+  }
+
+  .grid-stats {
+    @apply grid grid-cols-2 lg:grid-cols-4 gap-4;
+  }
+
+  /* Animation Classes */
+  .fade-in {
+    @apply animate-in fade-in duration-300;
+  }
+
+  .slide-up {
+    @apply animate-in slide-in-from-bottom-4 duration-300;
+  }
+
+  /* Mobile responsive text sizing */
+  .text-2xs {
+    font-size: 0.65rem;
+    line-height: 0.875rem;
   }
 }
 
@@ -53,5 +176,57 @@
   
   .safe-area-bottom {
     padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-inset {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* Mobile-specific optimizations */
+@media (max-width: 1023px) {
+  .mobile-bottom-nav {
+    @apply fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200 z-50;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    min-height: 80px; /* Ensure consistent height */
+  }
+  
+  .mobile-content {
+    /* Increased bottom padding to account for mobile navigation */
+    padding-bottom: max(100px, calc(80px + env(safe-area-inset-bottom))) !important;
+    padding-left: max(1rem, env(safe-area-inset-left)) !important;
+    padding-right: max(1rem, env(safe-area-inset-right)) !important;
+  }
+
+  /* Ensure header has proper padding on mobile */
+  header .px-4 {
+    padding-left: max(1rem, env(safe-area-inset-left)) !important;
+    padding-right: max(1rem, env(safe-area-inset-right)) !important;
+  }
+}
+
+/* Extra mobile optimizations for very small screens */
+@media (max-width: 480px) {
+  .mobile-content {
+    padding-bottom: max(110px, calc(90px + env(safe-area-inset-bottom))) !important;
+  }
+  
+  /* Better text scaling on small screens */
+  .btn {
+    font-size: 0.875rem !important;
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+  
+  /* Ensure cards don't have too much padding on mobile */
+  .card {
+    @apply p-4;
+  }
+  
+  /* Make grid layouts more mobile-friendly */
+  .grid-responsive {
+    @apply gap-3;
   }
 } 

@@ -12,53 +12,51 @@ import ProfilePage from './pages/ProfilePage'
 function App() {
   return (
     <AuthProvider>
-      <div className="min-h-screen bg-gray-50">
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
-          
-          {/* Private routes */}
-          <Route path="/" element={
-            <PrivateRoute>
-              <Layout>
-                <HomePage />
-              </Layout>
-            </PrivateRoute>
-          } />
-          
-          <Route path="/products" element={
-            <PrivateRoute>
-              <Layout>
-                <ProductsPage />
-              </Layout>
-            </PrivateRoute>
-          } />
-          
-          <Route path="/add-product" element={
-            <PrivateRoute>
-              <Layout>
-                <AddProductPage />
-              </Layout>
-            </PrivateRoute>
-          } />
-          
-          <Route path="/community" element={
-            <PrivateRoute>
-              <Layout>
-                <CommunityPage />
-              </Layout>
-            </PrivateRoute>
-          } />
-          
-          <Route path="/profile" element={
-            <PrivateRoute>
-              <Layout>
-                <ProfilePage />
-              </Layout>
-            </PrivateRoute>
-          } />
-        </Routes>
-      </div>
+      <Routes>
+        {/* Public routes */}
+        <Route path="/login" element={<LoginPage />} />
+        
+        {/* Private routes */}
+        <Route path="/" element={
+          <PrivateRoute>
+            <Layout>
+              <HomePage />
+            </Layout>
+          </PrivateRoute>
+        } />
+        
+        <Route path="/products" element={
+          <PrivateRoute>
+            <Layout>
+              <ProductsPage />
+            </Layout>
+          </PrivateRoute>
+        } />
+        
+        <Route path="/add-product" element={
+          <PrivateRoute>
+            <Layout>
+              <AddProductPage />
+            </Layout>
+          </PrivateRoute>
+        } />
+        
+        <Route path="/community" element={
+          <PrivateRoute>
+            <Layout>
+              <CommunityPage />
+            </Layout>
+          </PrivateRoute>
+        } />
+        
+        <Route path="/profile" element={
+          <PrivateRoute>
+            <Layout>
+              <ProfilePage />
+            </Layout>
+          </PrivateRoute>
+        } />
+      </Routes>
     </AuthProvider>
   )
 }

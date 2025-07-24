@@ -18,14 +18,10 @@ export function useReceiptProcessing() {
   const uploadAndProcess = useMutation(
     async (file: File) => {
       // For now, skip storage upload and process directly from file
-      const isGoogleVisionEnabled = isGoogleVisionConfigured()
-      
       setStatus({
         status: 'processing',
         progress: 30,
-        message: isGoogleVisionEnabled 
-          ? 'Processing receipt with Google Vision...' 
-          : 'Processing receipt with mock AI...',
+        message: 'Processing receipt...',
       })
 
       await new Promise(resolve => setTimeout(resolve, 500)) // Small delay for UX
@@ -33,7 +29,7 @@ export function useReceiptProcessing() {
       setStatus({
         status: 'processing',
         progress: 80,
-        message: 'Analyzing products with AI...',
+        message: 'Analyzing products...',
       })
 
       const processingResult = await processReceiptFromFile(file)
@@ -53,8 +49,7 @@ export function useReceiptProcessing() {
     },
     {
       onSuccess: (result) => {
-        const visionStatus = isGoogleVisionConfigured() ? 'Google Vision' : 'mock OCR'
-        toast.success(`Successfully processed receipt with ${visionStatus}! Found ${result.products.length} products.`)
+        toast.success(`Successfully processed receipt! Found ${result.products.length} products.`)
       },
       onError: (error: Error) => {
         setStatus({
@@ -74,9 +69,7 @@ export function useReceiptProcessing() {
       setStatus({
         status: 'processing',
         progress: 30,
-        message: isGoogleVisionEnabled
-          ? 'Processing receipt with Google Vision locally...'
-          : 'Processing receipt locally...',
+        message: 'Processing receipt...',
       })
 
       const result = await processReceiptFromFile(file)
@@ -92,8 +85,7 @@ export function useReceiptProcessing() {
     },
     {
       onSuccess: (result) => {
-        const visionStatus = isGoogleVisionConfigured() ? 'Google Vision' : 'mock OCR'
-        toast.success(`Successfully processed receipt with ${visionStatus}! Found ${result.products.length} products.`)
+        toast.success(`Successfully processed receipt! Found ${result.products.length} products.`)
       },
       onError: (error: Error) => {
         setStatus({
